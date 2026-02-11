@@ -1,0 +1,79 @@
+# upload to rahti:
+# ./oc apply -f postgresql.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_DB
+          value: devdb  
+        - name: POSTGRES_USER
+          value: devuser                  
+        - name: POSTGRES_PASSWORD
+          value: devpassword   
+        # OPTIONALLY use a password from Secrets on OpenShift, like so:
+        #- name: POSTGRES_PASSWORD
+        #  valueFrom:
+        #    secretKeyRef:
+        #      name: postgresql
+        #      key: database-password
+        #
+        # DATABASE_URL=postgresql://devuser:devpassword@postgres:5432/devdb
+        image: postgres:14.20-trixie
+        imagePullPolicy: IfNotPresent
+        name: postgresql
+        volumeMounts:
+        - mountPath: /var/lib/postgresql
+          name: psql
+        ports:
+          - containerPort: 5432
+            protocol: TCP
+      volumes:
+      - name: psql
+        persistentVolumeClaim:
+          claimName: psql
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: psql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard-csi
+  volumeMode: Filesystem
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgresql
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432

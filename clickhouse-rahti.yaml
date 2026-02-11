@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:latest
+          ports:
+            - containerPort: 8123   # HTTP interface
+            - containerPort: 9000   # native client
+          env:
+            - name: CLICKHOUSE_USER
+              value: clickhouse
+            - name: CLICKHOUSE_PASSWORD
+              # IMPORTANT: Add the password to OpenShift Secrets (Key/Value) BEFORE spinning up:
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse
+                  key: clickhouse-password           
+          volumeMounts:
+            - name: clickhouse-data
+              mountPath: /var/lib/clickhouse
+      volumes:
+        - name: clickhouse-data
+          emptyDir: {}  # for demo, ephemeral storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+spec:
+  selector:
+    app: clickhouse
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+    - name: native
+      port: 9000
+      targetPort: 9000
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: clickhouse
+spec:
+  to:
+    kind: Service
+    name: clickhouse
+  port:
+    targetPort: 8123
