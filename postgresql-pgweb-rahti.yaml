@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_DB
+          value: devdb
+        - name: POSTGRES_USER
+          value: devuser
+        - name: POSTGRES_PASSWORD
+          value: devpassword
+        # OPTIONALLY use a password from Secrets on OpenShift, like so:
+        #- name: POSTGRES_PASSWORD
+        #  valueFrom:
+        #    secretKeyRef:
+        #      name: postgresql
+        #      key: database-password
+        #
+        # DATABASE_URL=postgresql://devuser:devpassword@postgres:5432/devdb
+        image: postgres:14.20-trixie
+        imagePullPolicy: IfNotPresent
+        name: postgresql
+        volumeMounts:
+        - mountPath: /var/lib/postgresql
+          name: psql
+        ports:
+          - containerPort: 5432
+            protocol: TCP
+
+      # ---- pgweb sidecar (web UI) ----
+      - name: pgweb
+        image: sosedoff/pgweb:latest
+        imagePullPolicy: IfNotPresent
+        # No DATABASE_URL provided -> pgweb shows the manual connection form
+        args:
+          - --bind=0.0.0.0
+          - --listen=8081
+          # Optional: enable simple in-memory sessions to keep recent connections in the UI
+          # - --sessions
+        ports:
+          - containerPort: 8081
+            name: http
+            protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      # ---- end pgweb ----
+
+      volumes:
+      - name: psql
+        persistentVolumeClaim:
+          claimName: psql
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: psql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard-csi
+  volumeMode: Filesystem
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgresql
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgweb
+spec:
+  selector:
+    app: postgresql
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8081
+
+---
+
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: pgweb
+spec:
+  to:
+    kind: Service
+    name: pgweb
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
