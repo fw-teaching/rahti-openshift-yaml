@@ -17,24 +17,40 @@ spec:
           image: clickhouse/clickhouse-server:latest
           ports:
             - containerPort: 8123   # HTTP interface
-            - containerPort: 9000   # native client
+            - containerPort: 9000   # Native client interface
           env:
             - name: CLICKHOUSE_USER
               value: clickhouse
             - name: CLICKHOUSE_PASSWORD
-              # IMPORTANT: Add the password to OpenShift Secrets (Key/Value) BEFORE spinning up:
               valueFrom:
                 secretKeyRef:
                   name: clickhouse
-                  key: clickhouse-password           
+                  key: clickhouse-password
           volumeMounts:
             - name: clickhouse-data
               mountPath: /var/lib/clickhouse
       volumes:
         - name: clickhouse-data
-          emptyDir: {}  # for demo, ephemeral storage
+          persistentVolumeClaim:
+            claimName: clickhouse-pvc
 
 ---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard-csi
+  volumeMode: Filesystem
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -61,3 +77,6 @@ spec:
     name: clickhouse
   port:
     targetPort: 8123
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
